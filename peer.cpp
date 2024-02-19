@@ -14,6 +14,7 @@
 #include <cstring>        // For memset()
 #include <unistd.h>       // For close()
 #include <sstream>        // parsing strings
+#include <fstream> 
 #include <vector>
 #include <unordered_map>
 #include <string>
@@ -21,12 +22,76 @@
 #define ECHOMAX 255     // Longest string to echo
 #define ITERATIONS	5   // Number of iterations the client executes
 
-
+bool fileParsed = false;
 
 void DieWithError( const char *errorMessage ) // External error handling function
 {
     perror( errorMessage );
     exit(1);
+}
+
+struct StormEvent {
+    int eventID;
+    std::string state;
+    int year;
+    std::string monthName;
+    std::string eventType;
+    char czType;
+    std::string czName;
+    int injuriesDirect;
+    int injuriesIndirect;
+    int deathsDirect;
+    int deathsIndirect;
+    std::string damageProperty;
+    std::string damageCrops;
+    std::string torFScale;
+};
+
+std::vector<StormEvent> ParseCSV(const std::string& filename, std::vector<StormEvent> events, int& entries) {
+    std::ifstream file(filename);
+    std::string line;
+
+    if (!file.is_open()) {
+        std::cerr << "Unable to open file: " << filename << std::endl;
+    }
+
+    // Skip the header line
+    std::getline(file, line);
+
+    while (std::getline(file, line)) {
+        std::istringstream s(line);
+        StormEvent event;
+        std::string field;
+
+        std::getline(s, field, ',');
+        event.eventID = std::stoi(field);
+        std::getline(s, event.state, ',');
+        std::getline(s, field, ',');
+        event.year = std::stoi(field);
+        std::getline(s, event.monthName, ',');
+        std::getline(s, event.eventType, ',');
+        std::getline(s, field, ',');
+        event.czType = field[0];
+        std::getline(s, event.czName, ',');
+        std::getline(s, field, ',');
+        event.injuriesDirect = std::stoi(field);
+        std::getline(s, field, ',');
+        event.injuriesIndirect = std::stoi(field);
+        std::getline(s, field, ',');
+        event.deathsDirect = std::stoi(field);
+        std::getline(s, field, ',');
+        event.deathsIndirect = std::stoi(field);
+        std::getline(s, event.damageProperty, ',');
+        std::getline(s, event.damageCrops, ',');
+        std::getline(s, event.torFScale, ',');
+
+        events.push_back(event);
+        entries++;
+        fileParsed = true;
+    }
+
+    file.close();
+    return events;
 }
 
 int main( int argc, char *argv[] )
@@ -45,9 +110,10 @@ int main( int argc, char *argv[] )
     char* peerName; 
     char *ipv4; 
     unsigned short mPort, pPort; 
+    std::vector<StormEvent> events;
+    int entries = 0; 
     using namespace std; 
 
-    unordered_map<string, string, string, string> peers; 
 
     echoString = (char *) malloc( ECHOMAX );
 
@@ -72,16 +138,7 @@ int main( int argc, char *argv[] )
     echoServAddr.sin_addr.s_addr = inet_addr( servIP ); // Set server's IP address
     echoServAddr.sin_port = htons( echoServPort );      // Set server's port
 
-    /*
-    if(strcmp(command, "register") != 0) {
-        char registrationMessage[ECHOMAX]; 
-        sprintf(registrationMessage, "%s %s %s %d %d", command, peerName, ipv4, mPort, pPort); 
 
-        if(sendto(sock, registrationMessage, strlen(registrationMessage), 0, (struct sockaddr *)&echoServAddr, sizeof(echoServAddr)) != strlen(registrationMessage))
-            DieWithError("ERROR US");
-    }*/
-
-	// Pass string back and forth between server ITERATIONS times
 
 	//std::cout << "Client: Echoing strings for " << ITERATIONS << " iterations\n";
 
@@ -114,6 +171,11 @@ int main( int argc, char *argv[] )
         std::cout << buffer << " \n";
 
         if(lastCommand.find("setup-dht") == 0 && response.substr(0, 7) == "SUCCESS") {
+            
+            string filename = "details-1950.csv";
+            events = ParseCSV(filename, events, entries);
+
+            std::unordered_map<int, std::string> peerNames;
             istringstream commandStream(lastCommand);
             string command, leaderName; 
             int sizeOfDHT, year; 
@@ -143,11 +205,28 @@ int main( int argc, char *argv[] )
 
                 name.erase(0, name.find_first_not_of(" ")); 
                 ip.erase(0, ip.find_first_not_of(" "));
-
-                cout << "ID: " << ID << ", Name: " << name << ", IP: " << ip << ", Port: " << port << "Year: " << year << endl;
-                 
+                
+                peerNames[ID] = name;
                 ID++;
             }
+
+            
+            
+            std::vector<int> entriesPerPeer(sizeOfDHT, 0); // Initialize a vector to keep track of entries per peer
+
+            
+            for (int i = 0; i < entries; ++i) {
+                
+                int peerIndex = i % sizeOfDHT;
+                entriesPerPeer[peerIndex]++;
+            }
+
+            
+            for (int i = 0; i < sizeOfDHT; ++i) {
+                std::cout << peerNames[i] << " has " << entriesPerPeer[i] << " entries." << std::endl;
+            }
+            
+            cout << "\nSUCCESS: dht-complete" << endl; 
         }
 
         if(echoString == "close") {
